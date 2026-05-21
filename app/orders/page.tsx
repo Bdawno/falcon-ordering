@@ -21,10 +21,26 @@ interface Order {
   createdAt: string;
 }
 
+interface EmployeeOrderStatus {
+  id: string;
+  name: string;
+  email: string;
+  outOfOffice: boolean;
+  latestOrderStatus: string;
+  confirmedOrderDetails: {
+    id: string;
+    restaurant: string;
+    items: OrderItem[];
+    createdAt: string;
+  } | null;
+  lastOrderDate: string | null;
+}
+
 export default function OrdersPage() {
   const { session, isLoading } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOrderStatus[]>([]);
   const [filter, setFilter] = useState<string>("active");
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +52,11 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (session?.user) {
-      fetchOrders();
+      if (session.user.role === "admin") {
+        fetchEmployees();
+      } else if (filter !== "active") {
+        fetchOrders();
+      }
     }
   }, [session, filter]);
 
@@ -67,6 +87,21 @@ export default function OrdersPage() {
     }
   };
 
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/users/with-order-status");
+      if (res.ok) {
+        const data = await res.json();
+        setEmployees(data);
+      }
+    } catch (error) {
+      console.error("Error fetching employees:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -87,6 +122,23 @@ export default function OrdersPage() {
         return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getOrderStatusColor = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-50 text-yellow-700 border border-yellow-200";
+      case "confirmed":
+        return "bg-blue-50 text-blue-700 border border-blue-200";
+      case "ready":
+        return "bg-green-50 text-green-700 border border-green-200";
+      case "picked-up":
+        return "bg-gray-50 text-gray-700 border border-gray-200";
+      case "no order":
+        return "bg-gray-50 text-gray-600 border border-gray-200";
+      default:
+        return "bg-gray-50 text-gray-600 border border-gray-200";
     }
   };
 
@@ -145,68 +197,166 @@ export default function OrdersPage() {
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
-              {status === "active" ? "Orders" : status.charAt(0).toUpperCase() + status.slice(1)}
+              {status === "active"
+                ? "Orders"
+                : status === "picked-up"
+                ? "Picked Up"
+                : status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
           ))}
         </div>
 
-        {/* Orders List */}
-        {loading ? (
-          <div className="text-center py-8 text-gray-600">Loading orders...</div>
-        ) : orders.length === 0 ? (
-          <div className="text-center py-8 text-gray-600">
-            No {filter === "active" ? "" : filter} orders found
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {orders.map((order) => (
-              <div key={order.id} className="bg-white rounded-lg shadow p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {order.restaurant.name}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      By {order.user.name} ({order.user.email})
-                    </p>
-                  </div>
-                  {filter !== "active" && (
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                      {order.status}
-                    </span>
-                  )}
-                </div>
-
-                <div className="mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Items:</p>
-                  <ul className="space-y-1">
-                    {order.items.map((item) => (
-                      <li key={item.id} className="text-sm text-gray-600">
-                        • {item.quantity}x {item.menuItem.name}
-                        {item.specialRequests && (
-                          <span className="text-gray-500 italic"> - {item.specialRequests}</span>
+        {/* Employees Dashboard (Admin Only on Active Filter) */}
+        {filter === "active" && session?.user?.role === "admin" ? (
+          <>
+            {loading ? (
+              <div className="text-center py-8 text-gray-600">Loading employees...</div>
+            ) : employees.length === 0 ? (
+              <div className="text-center py-8 text-gray-600">No employees found</div>
+            ) : (
+              <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Email
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Order Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Order Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Office Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {employees.map((employee) => (
+                      <>
+                        <tr key={employee.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{employee.name}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-600">{employee.email}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded ${getOrderStatusColor(employee.latestOrderStatus)}`}>
+                              {employee.latestOrderStatus.charAt(0).toUpperCase() + employee.latestOrderStatus.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-600">
+                              {employee.lastOrderDate
+                                ? new Date(employee.lastOrderDate).toLocaleDateString()
+                                : "—"}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded ${
+                              employee.outOfOffice
+                                ? "bg-red-100 text-red-800"
+                                : "bg-green-100 text-green-800"
+                            }`}>
+                              {employee.outOfOffice ? "Out of Office" : "In Office"}
+                            </span>
+                          </td>
+                        </tr>
+                        {/* Show confirmed order details in expanded row */}
+                        {employee.confirmedOrderDetails && (
+                          <tr key={`${employee.id}-order`} className="bg-blue-50">
+                            <td colSpan={5} className="px-6 py-4">
+                              <div className="ml-4">
+                                <p className="text-sm font-medium text-gray-900 mb-2">
+                                  📦 Order from {employee.confirmedOrderDetails.restaurant}
+                                </p>
+                                <ul className="space-y-1">
+                                  {employee.confirmedOrderDetails.items.map((item) => (
+                                    <li key={item.id} className="text-sm text-gray-600">
+                                      • {item.quantity}x {item.menuItem.name}
+                                      {item.specialRequests && (
+                                        <span className="text-gray-500 italic"> - {item.specialRequests}</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </li>
+                      </>
                     ))}
-                  </ul>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      {new Date(order.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <Link
-                    href={`/orders/${order.id}`}
-                    className="px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50"
-                  >
-                    View Details
-                  </Link>
-                </div>
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Orders List */}
+            {loading ? (
+              <div className="text-center py-8 text-gray-600">Loading orders...</div>
+            ) : orders.length === 0 ? (
+              <div className="text-center py-8 text-gray-600">
+                No {filter === "active" ? "" : filter} orders found
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {orders.map((order) => (
+                  <div key={order.id} className="bg-white rounded-lg shadow p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {order.restaurant.name}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          By {order.user.name} ({order.user.email})
+                        </p>
+                      </div>
+                      {filter !== "active" && (
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
+                          {order.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Items:</p>
+                      <ul className="space-y-1">
+                        {order.items.map((item) => (
+                          <li key={item.id} className="text-sm text-gray-600">
+                            • {item.quantity}x {item.menuItem.name}
+                            {item.specialRequests && (
+                              <span className="text-gray-500 italic"> - {item.specialRequests}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          {new Date(order.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50"
+                      >
+                        View Details
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

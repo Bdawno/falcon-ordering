@@ -57,6 +57,8 @@ export default function AdminDashboard() {
   const [creatingRestaurant, setCreatingRestaurant] = useState(false);
   const [updatingWeeklyRestaurant, setUpdatingWeeklyRestaurant] = useState(false);
   const [togglingOutOfOffice, setTogglingOutOfOffice] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState({ name: "", email: "", role: "" });
 
   useEffect(() => {
     if (!isLoading && !session?.user) {
@@ -241,6 +243,43 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleEditUser = (user: User) => {
+    setEditingUserId(user.id);
+    setEditFormData({ name: user.name, email: user.email, role: user.role });
+  };
+
+  const handleSaveEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUserId) return;
+
+    try {
+      const response = await fetch(`/api/users/${editingUserId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editFormData),
+      });
+
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setUsers(users.map((u) => (u.id === editingUserId ? updatedUser : u)));
+        setEditingUserId(null);
+        setEditFormData({ name: "", email: "", role: "" });
+        alert("User updated successfully!");
+      } else {
+        const error = await response.json();
+        alert("Failed to update user: " + error.error);
+      }
+    } catch (error) {
+      console.error("Error updating user:", error);
+      alert("An error occurred while updating the user");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUserId(null);
+    setEditFormData({ name: "", email: "", role: "" });
+  };
+
   const hasUserOrdered = (userId: string): boolean => {
     return orders.some((order) => order.user.email === users.find((u) => u.id === userId)?.email);
   };
@@ -328,7 +367,8 @@ export default function AdminDashboard() {
                   }
                 }}
                 disabled={updatingWeeklyRestaurant}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900"
+                style={{ color: '#1f2937' }}
               >
                 <option value="">Select a restaurant...</option>
                 {restaurants.map((restaurant) => (
@@ -454,7 +494,7 @@ export default function AdminDashboard() {
                   placeholder="Restaurant Name"
                   value={newRestaurant.name}
                   onChange={(e) => setNewRestaurant({ ...newRestaurant, name: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   required
                   disabled={creatingRestaurant}
                 />
@@ -533,7 +573,8 @@ export default function AdminDashboard() {
                   placeholder="Email"
                   value={newUser.email}
                   onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                  style={{ color: '#1f2937' }}
                   required
                   disabled={creatingUser}
                 />
@@ -542,7 +583,8 @@ export default function AdminDashboard() {
                   placeholder="Full Name"
                   value={newUser.name}
                   onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                  style={{ color: '#1f2937' }}
                   required
                   disabled={creatingUser}
                 />
@@ -551,14 +593,16 @@ export default function AdminDashboard() {
                   placeholder="Password"
                   value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                  style={{ color: '#1f2937' }}
                   required
                   disabled={creatingUser}
                 />
                 <select
                   value={newUser.role}
                   onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-no-repeat bg-left"
+                  style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundSize: '1.5em 1.5em', backgroundPosition: '0.5rem center', paddingLeft: '2rem' }}
                   disabled={creatingUser}
                 >
                   <option value="employee">Employee</option>
@@ -573,6 +617,57 @@ export default function AdminDashboard() {
                 </button>
               </form>
             </div>
+
+            {/* Edit User Form */}
+            {editingUserId && (
+              <div className="bg-blue-50 rounded-lg shadow p-6 border border-blue-200">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h2>
+                <form onSubmit={handleSaveEditUser} className="grid grid-cols-2 gap-4">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    style={{ color: '#1f2937' }}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    style={{ color: '#1f2937' }}
+                    required
+                  />
+                  <select
+                    value={editFormData.role}
+                    onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-no-repeat bg-left"
+                    style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundSize: '1.5em 1.5em', backgroundPosition: '0.5rem center', paddingLeft: '2rem' }}
+                  >
+                    <option value="employee">Employee</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <div className="col-span-2 flex gap-2">
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700"
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 rounded-md font-medium hover:bg-gray-400"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {/* Users List */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -596,6 +691,9 @@ export default function AdminDashboard() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                       Created
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -637,6 +735,15 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {new Date(user.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          onClick={() => handleEditUser(user)}
+                          disabled={editingUserId !== null}
+                          className="px-3 py-1 text-xs font-medium text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Edit
+                        </button>
                       </td>
                     </tr>
                   ))}

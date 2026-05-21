@@ -18,12 +18,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { outOfOffice } = await request.json();
+    const { outOfOffice, name, email, role } = await request.json();
     const { id: userId } = await params;
 
-    if (outOfOffice === undefined) {
+    // At least one field must be provided
+    if (outOfOffice === undefined && !name && !email && !role) {
       return NextResponse.json(
-        { error: "outOfOffice field is required" },
+        { error: "At least one field is required" },
         { status: 400 }
       );
     }
@@ -33,7 +34,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    users.updateOutOfOffice(userId, outOfOffice);
+    // Handle outOfOffice update
+    if (outOfOffice !== undefined) {
+      users.updateOutOfOffice(userId, outOfOffice);
+    }
+
+    // Handle name, email, role updates
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (role) updateData.role = role;
+
+    if (Object.keys(updateData).length > 0) {
+      // Check if new email is already taken by another user
+      if (email && email !== user.email) {
+        const existingUser = users.findByEmail(email);
+        if (existingUser) {
+          return NextResponse.json(
+            { error: "Email already in use" },
+            { status: 400 }
+          );
+        }
+      }
+      users.update(userId, updateData);
+    }
 
     const updatedUser = users.findById(userId);
     return NextResponse.json({

@@ -97,6 +97,29 @@ export const users = {
     const stmt = db.prepare("UPDATE User SET outOfOffice = ? WHERE id = ?");
     return stmt.run(outOfOffice ? 1 : 0, id);
   },
+  update: (id: string, data: { name?: string; email?: string; role?: string }) => {
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.name !== undefined) {
+      updates.push("name = ?");
+      values.push(data.name);
+    }
+    if (data.email !== undefined) {
+      updates.push("email = ?");
+      values.push(data.email);
+    }
+    if (data.role !== undefined) {
+      updates.push("role = ?");
+      values.push(data.role);
+    }
+
+    if (updates.length === 0) return null;
+
+    values.push(id);
+    const stmt = db.prepare(`UPDATE User SET ${updates.join(", ")} WHERE id = ?`);
+    return stmt.run(...values);
+  },
 };
 
 export const restaurants = {
