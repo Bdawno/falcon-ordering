@@ -23,6 +23,7 @@ export function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS Restaurant (
       id TEXT PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
+      menuUrl TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -99,7 +100,7 @@ export const users = {
   },
   update: (id: string, data: { name?: string; email?: string; role?: string }) => {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (data.name !== undefined) {
       updates.push("name = ?");
@@ -123,9 +124,9 @@ export const users = {
 };
 
 export const restaurants = {
-  create: (data: { id: string; name: string }) => {
-    const stmt = db.prepare("INSERT INTO Restaurant (id, name) VALUES (?, ?)");
-    return stmt.run(data.id, data.name);
+  create: (data: { id: string; name: string; menuUrl?: string | null }) => {
+    const stmt = db.prepare("INSERT INTO Restaurant (id, name, menuUrl) VALUES (?, ?, ?)");
+    return stmt.run(data.id, data.name, data.menuUrl || null);
   },
   findAll: () => {
     const stmt = db.prepare("SELECT * FROM Restaurant ORDER BY name");
@@ -154,14 +155,35 @@ export const menuItems = {
     const stmt = db.prepare("SELECT * FROM MenuItem WHERE restaurantId = ? ORDER BY name");
     return stmt.all(restaurantId);
   },
+  findById: (id: string) => {
+    return db.prepare("SELECT * FROM MenuItem WHERE id = ?").get(id) as
+      | { id: string; restaurantId: string; name: string; description: string | null; price: number }
+      | undefined;
+  },
+  update: (id: string, data: { name: string; description: string | null; price: number }) => {
+    const stmt = db.prepare("UPDATE MenuItem SET name = ?, description = ?, price = ? WHERE id = ?");
+    return stmt.run(data.name, data.description, data.price, id);
+  },
+  delete: (id: string) => {
+    return db.prepare("DELETE FROM MenuItem WHERE id = ?").run(id);
+  },
+  isOrdered: (id: string) => {
+    return !!db.prepare("SELECT 1 FROM OrderItem WHERE menuItemId = ? LIMIT 1").get(id);
+  },
 };
 
 export const orders = {
-  create: (data: { id: string; userId: string; restaurantId: string; notes?: string }) => {
+  create: (data: {
+    id: string;
+    userId: string;
+    restaurantId: string;
+    notes?: string;
+    totalPrice?: number;
+  }) => {
     const stmt = db.prepare(
       "INSERT INTO \"Order\" (id, userId, restaurantId, totalPrice, notes) VALUES (?, ?, ?, ?, ?)"
     );
-    return stmt.run(data.id, data.userId, data.restaurantId, 0, data.notes || null);
+    return stmt.run(data.id, data.userId, data.restaurantId, data.totalPrice ?? 0, data.notes || null);
   },
   findById: (id: string) => {
     const stmt = db.prepare("SELECT * FROM \"Order\" WHERE id = ?");
@@ -173,7 +195,7 @@ export const orders = {
   },
   findAll: (filters?: { status?: string }) => {
     let query = 'SELECT * FROM "Order"';
-    const params: any[] = [];
+    const params: unknown[] = [];
     if (filters?.status) {
       query += " WHERE status = ?";
       params.push(filters.status);
@@ -196,7 +218,16 @@ export const orders = {
          JOIN MenuItem mi ON oi.menuItemId = mi.id 
          WHERE oi.orderId = ?`
       )
-      .all(orderId) as any[];
+      .all(orderId) as Array<{
+        id: string;
+        orderId: string;
+        menuItemId: string;
+        quantity: number;
+        specialRequests: string | null;
+        name: string;
+        description: string | null;
+        price: number;
+      }>;
     
     const items = rawItems.map((item) => ({
       id: item.id,
@@ -237,7 +268,7 @@ export const orderItems = {
 export const settings = {
   get: (key: string) => {
     const stmt = db.prepare("SELECT value FROM Setting WHERE key = ?");
-    const result = stmt.get(key) as any;
+    const result = stmt.get(key) as { value: string } | undefined;
     return result?.value || null;
   },
   set: (key: string, value: string) => {

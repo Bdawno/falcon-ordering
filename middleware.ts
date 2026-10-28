@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Protected routes
-  if (pathname.startsWith("/orders") || pathname === "/admin") {
+  if (pathname.startsWith("/orders") || pathname.startsWith("/admin")) {
     if (!sessionCookie) {
       return NextResponse.redirect(new URL("/login", request.url));
     }

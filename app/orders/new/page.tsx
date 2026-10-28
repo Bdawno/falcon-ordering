@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/app/lib/use-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +16,7 @@ interface Restaurant {
   id: string;
   name: string;
   menuItems: MenuItem[];
+  menuUrl?: string | null;
 }
 
 interface CartItem {
@@ -41,13 +42,7 @@ export default function NewOrderPage() {
     }
   }, [isLoading, session, router]);
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchWeeklyRestaurant();
-    }
-  }, [session]);
-
-  const fetchWeeklyRestaurant = async () => {
+  const fetchWeeklyRestaurant = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/restaurant-of-week");
@@ -60,7 +55,16 @@ export default function NewOrderPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (session?.user) {
+      const timeout = window.setTimeout(() => {
+        void fetchWeeklyRestaurant();
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [session, fetchWeeklyRestaurant]);
 
   const addToCart = (item: MenuItem) => {
     const cartKey = item.id;
@@ -97,14 +101,6 @@ export default function NewOrderPage() {
   const removeFromCart = (menuItemId: string) => {
     cart.delete(menuItemId);
     setCart(new Map(cart));
-  };
-
-  const calculateTotal = () => {
-    let total = 0;
-    cart.forEach((item) => {
-      total += item.price * item.quantity;
-    });
-    return total;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -160,7 +156,9 @@ export default function NewOrderPage() {
       <header className="bg-white shadow">
         <div className="mx-auto max-w-6xl px-6 py-4">
           <div className="flex items-center gap-4 mb-4">
-            <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-10 w-auto" />
+            <Link href="/orders" aria-label="Go to orders">
+              <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-10 w-auto" />
+            </Link>
             <h1 className="text-2xl font-bold text-gray-900">Falcon Northwest</h1>
           </div>
           <Link href="/orders" className="text-indigo-600 hover:text-indigo-700 font-medium mb-2 inline-block">
@@ -190,10 +188,17 @@ export default function NewOrderPage() {
             <div className="col-span-2">
               <div className="bg-white rounded-lg shadow p-6 mb-6">
                 <h2 className="text-lg font-semibold text-gray-900">
-                  This Week's Restaurant
+                  This Week&apos;s Restaurant
                 </h2>
                 <p className="text-indigo-600 text-2xl font-bold mt-2">{weeklyRestaurant.name}</p>
-                <p className="text-sm text-gray-600 mt-1">Select items below to add to your order</p>
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-sm text-gray-600">Select items below to add to your order</p>
+                  {weeklyRestaurant.menuUrl && (
+                    <a href={weeklyRestaurant.menuUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline text-sm">
+                      View Official Menu
+                    </a>
+                  )}
+                </div>
               </div>
 
               <div className="bg-white rounded-lg shadow p-6">

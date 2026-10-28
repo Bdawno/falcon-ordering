@@ -16,15 +16,23 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Invalid credentials");
         }
 
-        const user = users.findByEmail(credentials.email as string);
+        const user = users.findByEmail(credentials.email) as
+          | {
+              id: string;
+              email: string;
+              name: string;
+              role: string;
+              password: string;
+            }
+          | undefined;
 
         if (!user) {
           throw new Error("No user found with this email");
         }
 
         const passwordMatch = await bcrypt.compare(
-          credentials.password as string,
-          user.password as string
+          credentials.password,
+          user.password
         );
 
         if (!passwordMatch) {
@@ -32,10 +40,10 @@ export const authOptions: NextAuthOptions = {
         }
 
         return {
-          id: user.id as string,
-          email: user.email as string,
-          name: user.name as string,
-          role: user.role as string,
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
         };
       },
     }),
@@ -44,19 +52,19 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }: any) {
+    async jwt({ token, user }) {
       if (user) {
         token.role = user.role;
       }
       return token;
     },
-    async session({ session, token }: any) {
+    async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role as string;
+        session.user.role = token.role ?? "employee";
       }
       return session;
     },
   },
 };
 
-export const { handlers, auth } = NextAuth(authOptions);
+export const handlers = NextAuth(authOptions);

@@ -1,36 +1,41 @@
 import { users, orders, restaurants } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSessionFromRequest(request);
-    if (!session) {
+    const session = getSessionUser(request);
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get all users
-    const allUsers: any[] = users.findAll();
+    const allUsers = users.findAll() as Array<{
+      id: string;
+      name: string;
+      email: string;
+      outOfOffice: number | boolean;
+    }>;
 
-    // Enrich each user with their latest order status and order details
     const enrichedUsers = allUsers.map((user) => {
-      const userOrders: any[] = orders.findByUser(user.id);
-      const latestOrder = userOrders[0] || null; // Orders are sorted by createdAt DESC
+      const userOrders = orders.findByUser(user.id) as Array<{
+        id: string;
+        status: string;
+        createdAt: string | null;
+      }>;
+      const latestOrder = userOrders[0] || null;
 
       let confirmedOrderDetails = null;
       if (latestOrder?.status === "confirmed") {
-        const orderWithItems = orders.withItems(latestOrder.id);
+        const orderWithItems = orders.withItems(latestOrder.id) as
+          | {
+              id: string;
+              restaurantId: string;
+              createdAt: string;
+              items: unknown[];
+            }
+          | null;
         if (orderWithItems) {
-          const restaurant = (restaurants.findAll() as any[]).find(
+          const restaurant = (restaurants.findAll() as Array<{ id: string; name: string }>).find(
             (r) => r.id === orderWithItems.restaurantId
           );
           confirmedOrderDetails = {
@@ -46,7 +51,7 @@ export async function GET(request: NextRequest) {
         id: user.id,
         name: user.name,
         email: user.email,
-        outOfOffice: user.outOfOffice === 1,
+        outOfOffice: user.outOfOffice === 1 || user.outOfOffice === true,
         latestOrderStatus: latestOrder?.status || "no order",
         confirmedOrderDetails: confirmedOrderDetails,
         lastOrderDate: latestOrder?.createdAt || null,

@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+interface TestCredentials {
+  admin: { email: string; password: string };
+  employee: { email: string; password: string };
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -9,7 +15,28 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [testCredentials, setTestCredentials] = useState<TestCredentials | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+
+    const timeout = window.setTimeout(() => {
+      void fetch("/api/auth/test-credentials")
+        .then(async (response) => {
+          if (!response.ok) return null;
+          return (await response.json()) as TestCredentials;
+        })
+        .then((credentials) => {
+          if (credentials) setTestCredentials(credentials);
+        })
+        .catch((fetchError: unknown) => {
+          console.error("Unable to load development test credentials:", fetchError);
+        });
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +56,7 @@ export default function LoginPage() {
       } else {
         router.push("/orders");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred during sign in");
     } finally {
       setIsLoading(false);
@@ -40,7 +67,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
         <div className="mb-8 text-center">
-          <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-16 w-auto mx-auto mb-4" />
+          <Link href="/" aria-label="Go to home">
+            <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-16 w-auto mx-auto mb-4" />
+          </Link>
           <h1 className="text-3xl font-bold text-gray-900">Falcon Northwest</h1>
           <p className="mt-2 text-gray-600">Food Order Management</p>
         </div>
@@ -115,20 +144,25 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 border-t border-gray-200 pt-6">
-          <p className="text-center text-sm text-gray-600">
-            Demo credentials for testing:
-          </p>
-          <div className="mt-3 space-y-2 rounded-md bg-gray-50 p-3 text-sm">
-            <p className="text-gray-700">
-              <strong>Admin:</strong> admin@falconnorthwest.com
+        {testCredentials && (
+          <section className="mt-6 border-t border-gray-200 pt-6" aria-label="Test login information">
+            <p className="text-center text-sm font-medium text-gray-700">
+              Development test accounts
             </p>
-            <p className="text-gray-700">
-              <strong>Employee:</strong> employee@falconnorthwest.com
-            </p>
-            <p className="text-gray-600">Password: admin123 or employee123</p>
-          </div>
-        </div>
+            <div className="mt-3 space-y-3 rounded-md bg-gray-50 p-3 text-sm">
+              <div>
+                <p className="font-semibold text-gray-700">Admin</p>
+                <p className="text-gray-600">Email: {testCredentials.admin.email}</p>
+                <p className="text-gray-600">Password: {testCredentials.admin.password}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-700">Employee</p>
+                <p className="text-gray-600">Email: {testCredentials.employee.email}</p>
+                <p className="text-gray-600">Password: {testCredentials.employee.password}</p>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

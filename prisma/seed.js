@@ -1,15 +1,34 @@
-const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcryptjs");
-
-const prisma = new PrismaClient();
-
 async function main() {
+  const [{ PrismaClient }, { PrismaBetterSqlite3 }, bcryptModule] = await Promise.all([
+    import("@prisma/client"),
+    import("@prisma/adapter-better-sqlite3"),
+    import("bcryptjs"),
+  ]);
+  const bcrypt = bcryptModule.default;
+  const prisma = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({
+      url: process.env.DATABASE_URL || "file:./dev.db",
+    }),
+  });
+
+  try {
+  const adminEmail = process.env.SEED_ADMIN_EMAIL;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const employeeEmail = process.env.SEED_EMPLOYEE_EMAIL;
+  const employeePassword = process.env.SEED_EMPLOYEE_PASSWORD;
+  if (!adminEmail || !adminPassword || !employeeEmail || !employeePassword) {
+    throw new Error(
+      "Set SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_EMPLOYEE_EMAIL, and SEED_EMPLOYEE_PASSWORD before seeding."
+    );
+  }
+
   // Create restaurants
-  const chipotle = await prisma.restaurant.upsert({
+  await prisma.restaurant.upsert({
     where: { name: "Chipotle" },
     update: {},
     create: {
       name: "Chipotle",
+      menuUrl: "https://www.chipotle.com/menu",
       menuItems: {
         create: [
           { name: "Chicken Bowl", description: "Grilled chicken, rice, beans, toppings", price: 8.5 },
@@ -24,11 +43,12 @@ async function main() {
     },
   });
 
-  const panera = await prisma.restaurant.upsert({
+  await prisma.restaurant.upsert({
     where: { name: "Panera Bread" },
     update: {},
     create: {
       name: "Panera Bread",
+      menuUrl: "https://www.panerabread.com/menu",
       menuItems: {
         create: [
           { name: "Mediterranean Veggie", description: "Hummus, roasted veggies, feta", price: 9.0 },
@@ -43,11 +63,12 @@ async function main() {
     },
   });
 
-  const jimmyJohns = await prisma.restaurant.upsert({
+  await prisma.restaurant.upsert({
     where: { name: "Jimmy Johns" },
     update: {},
     create: {
       name: "Jimmy Johns",
+      menuUrl: "https://www.jimmyjohns.com/menu",
       menuItems: {
         create: [
           { name: "Pepe", description: "Roast beef, provolone, mayo", price: 7.5 },
@@ -62,41 +83,41 @@ async function main() {
   });
 
   // Create test users
-  const hashedPassword = await bcrypt.hash("password123", 10);
+  const hashedAdminPassword = await bcrypt.hash(adminPassword, 10);
+  const hashedEmployeePassword = await bcrypt.hash(employeePassword, 10);
   
   const adminUser = await prisma.user.upsert({
-    where: { email: "admin@falconnorthwest.com" },
+    where: { email: adminEmail.trim().toLowerCase() },
     update: {},
     create: {
-      email: "admin@falconnorthwest.com",
+      email: adminEmail.trim().toLowerCase(),
       name: "Admin User",
-      password: hashedPassword,
+      password: hashedAdminPassword,
       role: "admin",
     },
   });
 
   const employeeUser = await prisma.user.upsert({
-    where: { email: "employee@falconnorthwest.com" },
+    where: { email: employeeEmail.trim().toLowerCase() },
     update: {},
     create: {
-      email: "employee@falconnorthwest.com",
+      email: employeeEmail.trim().toLowerCase(),
       name: "John Employee",
-      password: hashedPassword,
+      password: hashedEmployeePassword,
       role: "employee",
     },
   });
 
   console.log("Seed data created successfully!");
-  console.log("Test credentials:");
-  console.log("Admin: admin@falconnorthwest.com / password123");
-  console.log("Employee: employee@falconnorthwest.com / password123");
+  console.log(`Created admin account: ${adminUser.email}`);
+  console.log(`Created employee account: ${employeeUser.email}`);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
 main()
   .catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

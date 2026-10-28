@@ -8,15 +8,15 @@ This is a complete food ordering management system built for Falcon Northwest em
 
 ### ✅ Completed Features
 
-- **Database**: SQLite with Prisma ORM
+- **Database**: SQLite via `better-sqlite3`, with Prisma schema and migrations
   - User management with roles (employee/admin)
   - Restaurant and menu item management
   - Order tracking with status updates
   - Full relational data model
 
-- **Authentication**: NextAuth.js
+- **Authentication**: Signed, database-backed session cookies
   - Email/password login
-  - Session management
+  - HMAC-signed sessions with expiration
   - Role-based access control
 
 - **API Routes** (RESTful):
@@ -63,14 +63,18 @@ npx prisma migrate dev --name init
 ```
 
 ### 3. Seed Initial Data (Optional)
+
+Set `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_EMPLOYEE_EMAIL`, and
+`SEED_EMPLOYEE_PASSWORD` to the account details you choose before running the
+seed command. The seed scripts do not provide reusable default credentials.
+
 ```bash
-node prisma/seed.js
+npx prisma db seed
 ```
 
 This creates:
 - 3 test restaurants (Chipotle, Panera, Jimmy Johns)
-- Test admin user: `admin@falconnorthwest.com` / `password123`
-- Test employee: `employee@falconnorthwest.com` / `password123`
+- An admin and employee using the configured seed email addresses and passwords
 
 ### 4. Run Development Server
 ```bash
@@ -110,8 +114,10 @@ Visit `http://localhost:3000`
 
 ### Authentication
 - Passwords are hashed with bcryptjs
-- Sessions managed by NextAuth.js
-- Add `NEXTAUTH_SECRET` environment variable for production
+- Sessions are signed with `SESSION_SECRET`; configure a strong random value in
+  production. The application will refuse to create or verify sessions without it.
+- The API seed endpoint is available only in development, requires `SEED_SECRET`
+  as a bearer token, and requires the four `SEED_*` account variables above.
 
 ### Adding Restaurants & Menu Items
 Currently, restaurants can be added via:
@@ -218,7 +224,16 @@ Create `.env` file:
 DATABASE_URL="file:./dev.db"
 NEXTAUTH_SECRET="your-secret-here"
 NEXTAUTH_URL="http://localhost:3000"
+SESSION_SECRET="replace-with-a-unique-random-secret-of-32-or-more-characters"
+SEED_SECRET="replace-with-a-separate-random-secret-of-32-or-more-characters"
+SEED_ADMIN_EMAIL="admin@example.com"
+SEED_ADMIN_PASSWORD="choose-a-unique-password"
+SEED_EMPLOYEE_EMAIL="employee@example.com"
+SEED_EMPLOYEE_PASSWORD="choose-a-unique-password"
 ```
+
+Replace the secret placeholders with independent, randomly generated values;
+do not deploy the example strings.
 
 ## Production Deployment
 

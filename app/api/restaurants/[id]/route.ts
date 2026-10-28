@@ -1,29 +1,23 @@
 import { restaurants } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const restaurantId = params.id;
+    const { id: restaurantId } = await params;
 
-    restaurants.delete(restaurantId);
+    const result = restaurants.delete(restaurantId);
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, message: "Restaurant deleted successfully" });
   } catch (error) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth, logout } from "@/app/lib/use-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -41,43 +41,16 @@ export default function OrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [employees, setEmployees] = useState<EmployeeOrderStatus[]>([]);
-  const [filter, setFilter] = useState<string>("active");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!isLoading && !session?.user) {
-      router.push("/login");
-    }
-  }, [isLoading, session, router]);
-
-  useEffect(() => {
-    if (session?.user) {
-      if (session.user.role === "admin") {
-        fetchEmployees();
-      } else if (filter !== "active") {
-        fetchOrders();
-      }
-    }
-  }, [session, filter]);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
-      setLoading(true);
       // Fetch both pending and confirmed orders (active orders)
-      const pendingRes = filter === "active" ? await fetch(`/api/orders?status=pending`) : null;
-      const confirmedRes = filter === "active" ? await fetch(`/api/orders?status=confirmed`) : null;
-      const readyRes = filter === "ready" ? await fetch(`/api/orders?status=ready`) : null;
-      const pickedUpRes = filter === "picked-up" ? await fetch(`/api/orders?status=picked-up`) : null;
-
-      let data: any[] = [];
-      if (filter === "active") {
-        const pendingData = pendingRes?.ok ? await pendingRes.json() : [];
-        const confirmedData = confirmedRes?.ok ? await confirmedRes.json() : [];
-        data = [...pendingData, ...confirmedData];
-      } else {
-        const res = filter === "ready" ? readyRes : pickedUpRes;
-        data = res?.ok ? await res.json() : [];
-      }
+      const pendingRes = await fetch(`/api/orders?status=pending`);
+      const confirmedRes = await fetch(`/api/orders?status=confirmed`);
+      const pendingData = pendingRes.ok ? await pendingRes.json() : [];
+      const confirmedData = confirmedRes.ok ? await confirmedRes.json() : [];
+      const data: Order[] = [...pendingData, ...confirmedData];
       
       setOrders(data);
     } catch (error) {
@@ -85,11 +58,10 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/users/with-order-status");
       if (res.ok) {
         const data = await res.json();
@@ -100,7 +72,26 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && !session?.user) {
+      router.push("/login");
+    }
+  }, [isLoading, session, router]);
+
+  useEffect(() => {
+    if (session?.user) {
+      const timeout = window.setTimeout(() => {
+        if (session.user?.role === "admin") {
+          void fetchEmployees();
+        } else {
+          void fetchOrders();
+        }
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [session, fetchEmployees, fetchOrders]);
 
   if (isLoading) {
     return (
@@ -110,31 +101,12 @@ export default function OrdersPage() {
     );
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "confirmed":
-        return "bg-blue-100 text-blue-800";
-      case "ready":
-        return "bg-green-100 text-green-800";
-      case "picked-up":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   const getOrderStatusColor = (status: string) => {
     switch (status) {
       case "pending":
         return "bg-yellow-50 text-yellow-700 border border-yellow-200";
       case "confirmed":
         return "bg-blue-50 text-blue-700 border border-blue-200";
-      case "ready":
-        return "bg-green-50 text-green-700 border border-green-200";
-      case "picked-up":
-        return "bg-gray-50 text-gray-700 border border-gray-200";
       case "no order":
         return "bg-gray-50 text-gray-600 border border-gray-200";
       default:
@@ -148,7 +120,9 @@ export default function OrdersPage() {
       <header className="bg-white shadow">
         <div className="mx-auto max-w-6xl px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-12 w-auto" />
+            <Link href="/orders" aria-label="Go to orders">
+              <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-12 w-auto" />
+            </Link>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Falcon Northwest</h1>
               <p className="text-sm text-gray-600">Food Order Management</p>
@@ -185,29 +159,8 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {/* Filter Tabs */}
-        <div className="mb-6 flex gap-2 border-b border-gray-200">
-          {["active", "ready", "picked-up"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`px-4 py-2 font-medium ${
-                filter === status
-                  ? "text-indigo-600 border-b-2 border-indigo-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              {status === "active"
-                ? "Orders"
-                : status === "picked-up"
-                ? "Picked Up"
-                : status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Employees Dashboard (Admin Only on Active Filter) */}
-        {filter === "active" && session?.user?.role === "admin" ? (
+        {/* Employees Dashboard (Admin Only) */}
+        {session?.user?.role === "admin" ? (
           <>
             {loading ? (
               <div className="text-center py-8 text-gray-600">Loading employees...</div>
@@ -222,16 +175,10 @@ export default function OrdersPage() {
                         Name
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
+                        Office Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Order Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Last Order Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Office Status
                       </th>
                     </tr>
                   </thead>
@@ -240,22 +187,22 @@ export default function OrdersPage() {
                       <>
                         <tr key={employee.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-600">{employee.email}</div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm font-medium text-gray-900">{employee.name}</div>
+                              {employee.confirmedOrderDetails && (
+                                <div className="text-sm text-gray-600 truncate max-w-xs">
+                                  {employee.confirmedOrderDetails.items
+                                    .slice(0, 3)
+                                    .map((it) => `${it.quantity}x ${it.menuItem.name}`)
+                                    .join(", ")}{employee.confirmedOrderDetails.items.length > 3 ? "..." : ""}
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded ${getOrderStatusColor(employee.latestOrderStatus)}`}>
                               {employee.latestOrderStatus.charAt(0).toUpperCase() + employee.latestOrderStatus.slice(1)}
                             </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-600">
-                              {employee.lastOrderDate
-                                ? new Date(employee.lastOrderDate).toLocaleDateString()
-                                : "—"}
-                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-medium rounded ${
@@ -270,7 +217,7 @@ export default function OrdersPage() {
                         {/* Show confirmed order details in expanded row */}
                         {employee.confirmedOrderDetails && (
                           <tr key={`${employee.id}-order`} className="bg-blue-50">
-                            <td colSpan={5} className="px-6 py-4">
+                            <td colSpan={3} className="px-6 py-4">
                               <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-900 mb-2">
                                   📦 Order from {employee.confirmedOrderDetails.restaurant}
@@ -303,7 +250,7 @@ export default function OrdersPage() {
               <div className="text-center py-8 text-gray-600">Loading orders...</div>
             ) : orders.length === 0 ? (
               <div className="text-center py-8 text-gray-600">
-                No {filter === "active" ? "" : filter} orders found
+                No orders found
               </div>
             ) : (
               <div className="grid gap-4">
@@ -318,11 +265,6 @@ export default function OrdersPage() {
                           By {order.user.name} ({order.user.email})
                         </p>
                       </div>
-                      {filter !== "active" && (
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      )}
                     </div>
 
                     <div className="mb-4">

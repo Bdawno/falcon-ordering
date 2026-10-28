@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth, logout } from "@/app/lib/use-auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 interface User {
@@ -34,6 +34,7 @@ interface Restaurant {
   name: string;
   createdAt?: string;
   menuItems?: MenuItem[];
+  menuUrl?: string | null;
 }
 
 interface MenuItem {
@@ -42,10 +43,28 @@ interface MenuItem {
   price: number;
 }
 
-export default function AdminDashboard() {
+const TABS = ["orders", "restaurants", "users"];
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense>
+      <AdminDashboard />
+    </Suspense>
+  );
+}
+
+function AdminDashboard() {
   const { session, isLoading } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("orders");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab") ?? "";
+  const [activeTab, setActiveTabState] = useState(TABS.includes(tabParam) ? tabParam : "orders");
+
+  // Keep the tab in the URL so returning to this page restores it
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    window.history.replaceState(null, "", `/admin?tab=${tab}`);
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -53,7 +72,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "employee" });
   const [creatingUser, setCreatingUser] = useState(false);
-  const [newRestaurant, setNewRestaurant] = useState({ name: "" });
+  const [newRestaurant, setNewRestaurant] = useState({ name: "", menuUrl: "" });
   const [creatingRestaurant, setCreatingRestaurant] = useState(false);
   const [updatingWeeklyRestaurant, setUpdatingWeeklyRestaurant] = useState(false);
   const [togglingOutOfOffice, setTogglingOutOfOffice] = useState<string | null>(null);
@@ -69,15 +88,8 @@ export default function AdminDashboard() {
     }
   }, [isLoading, session, router]);
 
-  useEffect(() => {
-    if (session?.user?.role === "admin") {
-      loadDashboardData();
-    }
-  }, [session]);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
-      setLoading(true);
       const [ordersRes, usersRes, restaurantsRes, weeklyRes] = await Promise.all([
         fetch("/api/orders"),
         fetch("/api/users"),
@@ -109,7 +121,16 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (session?.user?.role === "admin") {
+      const timeout = window.setTimeout(() => {
+        void loadDashboardData();
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [session, loadDashboardData]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,13 +173,16 @@ export default function AdminDashboard() {
       const response = await fetch("/api/restaurants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRestaurant.name }),
+        body: JSON.stringify({
+          name: newRestaurant.name,
+          menuUrl: newRestaurant.menuUrl.trim() || null,
+        }),
       });
 
       if (response.ok) {
         const createdRestaurant = await response.json();
-        setRestaurants([...restaurants, { ...createdRestaurant, menuItems: [] }]);
-        setNewRestaurant({ name: "" });
+        setRestaurants([...restaurants, { ...createdRestaurant, menuItems: [], menuUrl: createdRestaurant.menuUrl || null }]);
+        setNewRestaurant({ name: "", menuUrl: "" });
         alert("Restaurant created successfully!");
       } else {
         const error = await response.json();
@@ -291,10 +315,6 @@ export default function AdminDashboard() {
         return "bg-yellow-100 text-yellow-800";
       case "confirmed":
         return "bg-blue-100 text-blue-800";
-      case "ready":
-        return "bg-green-100 text-green-800";
-      case "picked-up":
-        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -320,7 +340,9 @@ export default function AdminDashboard() {
       <header className="bg-white shadow">
         <div className="mx-auto max-w-7xl px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-12 w-auto" />
+            <Link href="/orders" aria-label="Go to orders">
+              <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-12 w-auto" />
+            </Link>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
               <p className="text-sm text-gray-600">Falcon Northwest - Management Panel</p>
@@ -499,6 +521,14 @@ export default function AdminDashboard() {
                   required
                   disabled={creatingRestaurant}
                 />
+                <input
+                  type="url"
+                  placeholder="Official menu URL (optional)"
+                  value={newRestaurant.menuUrl}
+                  onChange={(e) => setNewRestaurant({ ...newRestaurant, menuUrl: e.target.value })}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  disabled={creatingRestaurant}
+                />
                 <button
                   type="submit"
                   disabled={creatingRestaurant}
@@ -537,7 +567,14 @@ export default function AdminDashboard() {
                     {restaurants.map((restaurant) => (
                       <tr key={restaurant.id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {restaurant.name}
+                          <div className="flex items-center gap-2">
+                            <span>{restaurant.name}</span>
+                            {restaurant.menuUrl && (
+                              <a href={restaurant.menuUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline text-sm">
+                                View Menu
+                              </a>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {restaurant.menuItems?.length || 0} items
@@ -546,12 +583,20 @@ export default function AdminDashboard() {
                           {restaurant.createdAt ? new Date(restaurant.createdAt).toLocaleDateString() : "N/A"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <button
-                            onClick={() => handleDeleteRestaurant(restaurant.id)}
-                            className="text-red-600 hover:text-red-700 font-medium"
-                          >
-                            Delete
-                          </button>
+                          <div className="flex gap-4">
+                            <Link
+                              href={`/admin/restaurants/${restaurant.id}/menu`}
+                              className="text-indigo-600 hover:text-indigo-700 font-medium"
+                            >
+                              Manage Menu
+                            </Link>
+                            <button
+                              onClick={() => handleDeleteRestaurant(restaurant.id)}
+                              className="text-red-600 hover:text-red-700 font-medium"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

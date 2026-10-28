@@ -1,65 +1,85 @@
 import { users } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { outOfOffice, name, email, role } = await request.json();
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid user data" }, { status: 400 });
+    }
+    const { outOfOffice, name, email, role } = body as {
+      outOfOffice?: unknown;
+      name?: unknown;
+      email?: unknown;
+      role?: unknown;
+    };
     const { id: userId } = await params;
 
-    // At least one field must be provided
-    if (outOfOffice === undefined && !name && !email && !role) {
+    if (
+      outOfOffice === undefined &&
+      name === undefined &&
+      email === undefined &&
+      role === undefined
+    ) {
       return NextResponse.json(
         { error: "At least one field is required" },
         { status: 400 }
       );
     }
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : email;
+    if (
+      (outOfOffice !== undefined && typeof outOfOffice !== "boolean") ||
+      (name !== undefined && (typeof name !== "string" || !name.trim())) ||
+      (email !== undefined &&
+        (typeof normalizedEmail !== "string" ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))) ||
+      (role !== undefined && role !== "employee" && role !== "admin")
+    ) {
+      return NextResponse.json({ error: "Invalid user data" }, { status: 400 });
+    }
 
-    const user = users.findById(userId);
+    const user = users.findById(userId) as
+      | { id: string; email: string; name: string }
+      | undefined;
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Handle outOfOffice update
-    if (outOfOffice !== undefined) {
-      users.updateOutOfOffice(userId, outOfOffice);
-    }
-
-    // Handle name, email, role updates
-    const updateData: any = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (role) updateData.role = role;
-
-    if (Object.keys(updateData).length > 0) {
-      // Check if new email is already taken by another user
-      if (email && email !== user.email) {
-        const existingUser = users.findByEmail(email);
-        if (existingUser) {
-          return NextResponse.json(
-            { error: "Email already in use" },
-            { status: 400 }
-          );
-        }
+    if (typeof normalizedEmail === "string" && normalizedEmail !== user.email) {
+      const existingUser = users.findByEmail(normalizedEmail);
+      if (existingUser) {
+        return NextResponse.json(
+          { error: "Email already in use" },
+          { status: 400 }
+        );
       }
-      users.update(userId, updateData);
     }
 
-    const updatedUser = users.findById(userId);
+    if (outOfOffice !== undefined) users.updateOutOfOffice(userId, outOfOffice);
+    users.update(userId, {
+      ...(typeof name === "string" ? { name: name.trim() } : {}),
+      ...(typeof normalizedEmail === "string" ? { email: normalizedEmail } : {}),
+      ...(typeof role === "string" ? { role } : {}),
+    });
+    const updatedUser = users.findById(userId) as
+      | {
+          id: string;
+          email: string;
+          name: string;
+          role: string;
+          outOfOffice: number | boolean;
+          createdAt: string;
+        }
+      | undefined;
+    if (!updatedUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
     return NextResponse.json({
       id: updatedUser.id,
       email: updatedUser.email,

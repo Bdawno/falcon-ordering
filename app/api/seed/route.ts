@@ -1,8 +1,38 @@
 import { initializeDatabase, restaurants, menuItems, users } from "@/app/lib/db";
 import bcrypt from "bcryptjs";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const seedSecret = process.env.SEED_SECRET;
+  const authorization = request.headers.get("authorization") ?? "";
+  const suppliedSecret = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : "";
+  const expected = Buffer.from(seedSecret ?? "");
+  const supplied = Buffer.from(suppliedSecret);
+
+  if (
+    process.env.NODE_ENV !== "development" ||
+    !seedSecret ||
+    seedSecret.length < 32 ||
+    expected.length !== supplied.length ||
+    !timingSafeEqual(expected, supplied)
+  ) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const adminEmail = process.env.SEED_ADMIN_EMAIL;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const employeeEmail = process.env.SEED_EMPLOYEE_EMAIL;
+  const employeePassword = process.env.SEED_EMPLOYEE_PASSWORD;
+  if (!adminEmail || !adminPassword || !employeeEmail || !employeePassword) {
+    return NextResponse.json(
+      { error: "Seed account environment variables are required" },
+      { status: 503 }
+    );
+  }
+
   try {
     // Initialize database schema
     initializeDatabase();
@@ -12,6 +42,7 @@ export async function POST() {
     restaurants.create({
       id: chiptoleId,
       name: "Chipotle",
+      menuUrl: "https://www.chipotle.com/menu",
     });
 
     const chipotle_items = [
@@ -35,6 +66,7 @@ export async function POST() {
     restaurants.create({
       id: paneraId,
       name: "Panera Bread",
+      menuUrl: "https://www.panerabread.com/menu",
     });
 
     const panera_items = [
@@ -56,6 +88,7 @@ export async function POST() {
     restaurants.create({
       id: subwayId,
       name: "Subway",
+      menuUrl: "https://www.subway.com/en-us/menu",
     });
 
     const subway_items = [
@@ -75,22 +108,22 @@ export async function POST() {
     }
 
     // Create users
-    const adminPassword = await bcrypt.hash("admin123", 10);
-    const employeePassword = await bcrypt.hash("employee123", 10);
+    const hashedAdminPassword = await bcrypt.hash(adminPassword, 10);
+    const hashedEmployeePassword = await bcrypt.hash(employeePassword, 10);
 
     users.create({
       id: randomUUID(),
-      email: "admin@falconnorthwest.com",
+      email: adminEmail.trim().toLowerCase(),
       name: "Admin User",
-      password: adminPassword,
+      password: hashedAdminPassword,
       role: "admin",
     });
 
     users.create({
       id: randomUUID(),
-      email: "employee@falconnorthwest.com",
+      email: employeeEmail.trim().toLowerCase(),
       name: "Test Employee",
-      password: employeePassword,
+      password: hashedEmployeePassword,
       role: "employee",
     });
 

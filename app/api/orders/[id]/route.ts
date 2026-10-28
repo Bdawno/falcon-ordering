@@ -1,40 +1,43 @@
 import { orders, users, restaurants } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
 
-    const order = orders.withItems(id) as any;
+    const order = orders.withItems(id) as {
+      id: string;
+      userId: string;
+      restaurantId: string;
+      [key: string]: unknown;
+    } | null;
 
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
+    if (session.role !== "admin" && order.userId !== session.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-    const user = users.findById(order.userId);
-    const restaurant = (restaurants.findAll() as any[]).find((r) => r.id === order.restaurantId);
+    const userRecord = users.findById(order.userId) as
+      | { id: string; name: string; email: string }
+      | undefined;
+    const restaurant = (restaurants.findAll() as Array<{ id: string }>).find((r) => r.id === order.restaurantId);
 
     return NextResponse.json({
       ...order,
-      user,
+      user: userRecord
+        ? { id: userRecord.id, name: userRecord.name, email: userRecord.email }
+        : null,
       restaurant,
     });
   } catch (error) {
@@ -51,16 +54,28 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    const { status } = await request.json();
+    const orderExists = orders.findById(id);
+    if (!orderExists) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    if (!request.headers.get("content-type")?.includes("application/json")) {
+      return NextResponse.json({ error: "Expected JSON request" }, { status: 400 });
+    }
+    const body: unknown = await request.json();
+    const status =
+      body && typeof body === "object" && "status" in body
+        ? (body as { status?: unknown }).status
+        : undefined;
 
     if (
-      !["pending", "confirmed", "ready", "picked-up"].includes(status)
+      typeof status !== "string" ||
+      !["pending", "confirmed"].includes(status)
     ) {
       return NextResponse.json(
         { error: "Invalid status" },
@@ -69,13 +84,24 @@ export async function PATCH(
     }
 
     orders.updateStatus(id, status);
-    const order = orders.withItems(id) as any;
-    const user = users.findById(order.userId);
-    const restaurant = (restaurants.findAll() as any[]).find((r) => r.id === order.restaurantId);
+    const order = orders.withItems(id) as {
+      userId: string;
+      restaurantId: string;
+      [key: string]: unknown;
+    } | null;
+    if (!order) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    const userRecord = users.findById(order.userId) as
+      | { id: string; name: string; email: string }
+      | undefined;
+    const restaurant = (restaurants.findAll() as Array<{ id: string }>).find((r) => r.id === order.restaurantId);
 
     return NextResponse.json({
       ...order,
-      user,
+      user: userRecord
+        ? { id: userRecord.id, name: userRecord.name, email: userRecord.email }
+        : null,
       restaurant,
     });
   } catch (error) {

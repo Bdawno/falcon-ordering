@@ -1,28 +1,19 @@
 import { restaurants } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
 import { randomUUID } from "crypto";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const all = restaurants.findAll() as any[];
+    const all = restaurants.findAll() as Array<{ id: string }>;
     const restaurantsWithMenus = all.map((restaurant) => ({
       ...restaurant,
-      menuItems: (restaurants.findWithMenuItems(restaurant.id) as any)?.menuItems || [],
+      menuItems: (restaurants.findWithMenuItems(restaurant.id) as { menuItems?: unknown[] } | null)?.menuItems || [],
     }));
 
     return NextResponse.json(restaurantsWithMenus);
@@ -37,19 +28,33 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name } = await request.json();
+    const body: unknown = await request.json();
+    const { name, menuUrl } = body as { name?: unknown; menuUrl?: unknown };
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      (menuUrl !== undefined && menuUrl !== null && typeof menuUrl !== "string")
+    ) {
+      return NextResponse.json({ error: "Invalid restaurant data" }, { status: 400 });
+    }
 
-    const restaurant = restaurants.create({
-      id: randomUUID(),
-      name,
+    const id = randomUUID();
+    restaurants.create({
+      id,
+      name: name.trim(),
+      menuUrl: typeof menuUrl === "string" && menuUrl.trim() ? menuUrl.trim() : null,
     });
 
-    return NextResponse.json({ id: randomUUID(), name });
+    return NextResponse.json({
+      id,
+      name: name.trim(),
+      menuUrl: typeof menuUrl === "string" && menuUrl.trim() ? menuUrl.trim() : null,
+    });
   } catch (error) {
     console.error("Error creating restaurant:", error);
     return NextResponse.json(

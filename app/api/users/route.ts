@@ -2,25 +2,23 @@ import { users } from "@/app/lib/db";
 import { NextResponse, NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-
-function getSessionFromRequest(request: NextRequest) {
-  const token = request.cookies.get("session")?.value;
-  if (!token) return null;
-  try {
-    return JSON.parse(Buffer.from(token, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
+import { getSessionUser } from "@/app/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = getSessionUser(request);
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const allUsers = (users.findAll() as any[]).map((u) => ({
+    const allUsers = (users.findAll() as Array<{
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      outOfOffice: number | boolean;
+      createdAt: string;
+    }>).map((u) => ({
       id: u.id,
       email: u.email,
       name: u.name,
@@ -41,10 +39,36 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, name, password, role } = await request.json();
+    const session = getSessionUser(request);
+    if (!session || session.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid user data" }, { status: 400 });
+    }
+    const { email, name, password, role } = body as {
+      email?: unknown;
+      name?: unknown;
+      password?: unknown;
+      role?: unknown;
+    };
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    const userRole = role ?? "employee";
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
+      !normalizedName ||
+      typeof password !== "string" ||
+      password.length < 8 ||
+      (userRole !== "employee" && userRole !== "admin")
+    ) {
+      return NextResponse.json({ error: "Invalid user data" }, { status: 400 });
+    }
 
     // Check if user already exists
-    const existingUser = users.findByEmail(email);
+    const existingUser = users.findByEmail(normalizedEmail);
 
     if (existingUser) {
       return NextResponse.json(
@@ -54,23 +78,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash password
+    const id = randomUUID();
     const hashedPassword = await bcrypt.hash(password, 10);
 
     users.create({
-      id: randomUUID(),
-      email,
-      name,
+      id,
+      email: normalizedEmail,
+      name: normalizedName,
       password: hashedPassword,
-      role: role || "employee",
+      role: userRole,
     });
 
     return NextResponse.json({
-      id: randomUUID(),
-      email,
-      name,
-      role: role || "employee",
+      id,
+      email: normalizedEmail,
+      name: normalizedName,
+      role: userRole,
       createdAt: new Date(),
-    });
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating user:", error);
     return NextResponse.json(

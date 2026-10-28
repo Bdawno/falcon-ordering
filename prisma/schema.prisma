@@ -1,10 +1,9 @@
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
 }
 
 model User {
@@ -21,6 +20,7 @@ model User {
 model Restaurant {
   id        String     @id @default(cuid())
   name      String     @unique
+  menuUrl   String?
   menuItems MenuItem[]
   orders    Order[]
   createdAt DateTime   @default(now())
@@ -48,7 +48,7 @@ model Order {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id])
   restaurantId String
   items      OrderItem[]
-  status     String     @default("pending") // "pending", "confirmed", "ready", "picked-up"
+  status     String     @default("pending") // "pending", "confirmed"
   totalPrice Float      @default(0)
   notes      String?
   createdAt  DateTime   @default(now())

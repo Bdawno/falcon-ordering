@@ -21,7 +21,7 @@ export function useAuth(): { session: Session | null; isLoading: boolean } {
         const res = await fetch("/api/auth/login");
         const data = await res.json();
         setSession({ user: data.user });
-      } catch (error) {
+      } catch {
         setSession({ user: null });
       } finally {
         setIsLoading(false);
@@ -35,7 +35,15 @@ export function useAuth(): { session: Session | null; isLoading: boolean } {
 }
 
 export async function logout() {
-  // Clear session by calling a logout endpoint or just removing the cookie client-side
-  document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-  window.location.href = "/login";
+  try {
+    const response = await fetch("/api/auth/login", { method: "DELETE" });
+    if (!response.ok) {
+      alert("Could not sign out. Please try again.");
+      return;
+    }
+    window.location.href = "/login";
+  } catch (error) {
+    console.error("Sign out failed:", error);
+    alert("Could not sign out. Please try again.");
+  }
 }

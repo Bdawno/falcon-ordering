@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/app/lib/use-auth";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -39,13 +39,7 @@ export default function OrderDetailPage() {
     }
   }, [isLoading, session, router]);
 
-  useEffect(() => {
-    if (session?.user && orderId) {
-      fetchOrder();
-    }
-  }, [session, orderId]);
-
-  const fetchOrder = async () => {
+  const fetchOrder = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/orders/${orderId}`);
@@ -61,7 +55,16 @@ export default function OrderDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [orderId, router]);
+
+  useEffect(() => {
+    if (session?.user && orderId) {
+      const timeout = window.setTimeout(() => {
+        void fetchOrder();
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [session, orderId, fetchOrder]);
 
   const handleStatusUpdate = async (newStatus: string) => {
     if (!session?.user || session.user.role !== "admin") {
@@ -97,10 +100,6 @@ export default function OrderDetailPage() {
         return "bg-yellow-100 text-yellow-800";
       case "confirmed":
         return "bg-blue-100 text-blue-800";
-      case "ready":
-        return "bg-green-100 text-green-800";
-      case "picked-up":
-        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -128,7 +127,9 @@ export default function OrderDetailPage() {
       <header className="bg-white shadow">
         <div className="mx-auto max-w-4xl px-6 py-4">
           <div className="flex items-center gap-4 mb-4">
-            <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-10 w-auto" />
+            <Link href="/orders" aria-label="Go to orders">
+              <img src="/falcon-logo.png" alt="Falcon Northwest" className="h-10 w-auto" />
+            </Link>
             <h1 className="text-2xl font-bold text-gray-900">Falcon Northwest</h1>
           </div>
           <Link href="/orders" className="text-indigo-600 hover:text-indigo-700 font-medium mb-2 inline-block">
@@ -194,7 +195,7 @@ export default function OrderDetailPage() {
             <div className="mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Update Order Status</h3>
               <div className="flex gap-2">
-                {["pending", "confirmed", "ready", "picked-up"].map((statusOption) => (
+                {["pending", "confirmed"].map((statusOption) => (
                   <button
                     key={statusOption}
                     onClick={() => handleStatusUpdate(statusOption)}
